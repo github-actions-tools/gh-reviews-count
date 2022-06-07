@@ -22,23 +22,47 @@ async function main() {
     per_page: 100
   });
 
-  var last_review_state_by_user = new Map();
+  var lastReviewStateByUser = new Map();
+  var lastReviewCommentsByUser = new Map();
 
   result.sort(sortReviewsBySubmittedDate).forEach(function (v) {
-    // As reviews are sorted by ascendant submitted dates, we will have the last review state for each user id in hashmap
-    last_review_state_by_user.set(v.user.id, v.state)
+    switch (v.state) {
+      case 'APPROVED':
+      case 'CHANGES_REQUESTED':
+      case 'DISMISSED':
+      case 'PENDING':
+        // As reviews are sorted by ascendant submitted dates, we will have the last review state for each user id in hashmap
+        lastReviewStateByUser.set(v.user.id, v.state)
+        break;
+      case 'COMMENTED':
+        // We handle comments differently because we can add comments without affecting approval states above
+        // Note : we could use directly a simple counter, but maybe this info by user will be useful for later
+        var commentCountForThisUser = (lastReviewCommentsByUser.get(v.user.id) || 0) + 1
+        lastReviewCommentsByUser.set(v.user.id, commentCountForThisUser)
+        break;
+      default:
+        console.log(`Unknown ${v.state}.`);
+    }
   });
 
-  console.log([...last_review_state_by_user.entries()]);
+  console.log([...lastReviewStateByUser.entries()]);
+  console.log([...lastReviewCommentsByUser.entries()]);
 
-  const reviews = [...last_review_state_by_user.values()].reduce((acc, curr) => (acc[curr] = (acc[curr] || 0) + 1, acc), {});
-  console.log(reviews);
+  const reviewApprovalStates = [...lastReviewStateByUser.values()].reduce((acc, curr) => (acc[curr] = (acc[curr] || 0) + 1, acc), {});
+  console.log(`Review approval states count : ${JSON.stringify(reviewApprovalStates, null, "  ")}.`);
 
-  core.setOutput('approved', reviews['APPROVED'] || 0);
-  core.setOutput('changes_requested', reviews['CHANGES_REQUESTED'] || 0);
-  core.setOutput('commented', reviews['COMMENTED'] || 0);
-  core.setOutput('pending', reviews['PENDING'] || 0);
-  core.setOutput('dismissed', reviews['DISMISSED'] || 0);
+  const reviewCommentsTotalInitialValue = 0;
+  const reviewCommentsTotal = [...lastReviewCommentsByUser.values()].reduce(
+    (previousValue, currentValue) => previousValue + currentValue,
+    reviewCommentsTotalInitialValue
+  );
+  console.log(`Review comment total count : ${reviewCommentsTotal}.`);
+
+  core.setOutput('approved', reviewApprovalStates['APPROVED'] || 0);
+  core.setOutput('changes_requested', reviewApprovalStates['CHANGES_REQUESTED'] || 0);
+  core.setOutput('pending', reviewApprovalStates['PENDING'] || 0);
+  core.setOutput('dismissed', reviewApprovalStates['DISMISSED'] || 0);
+  core.setOutput('commented', reviewCommentsTotal);
 }
 
 function sortReviewsBySubmittedDate(a, b) {
